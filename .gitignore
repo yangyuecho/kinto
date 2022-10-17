@@ -4,3 +4,6 @@ __pycache__/
 xkeysnail/
 keybindings_*
 mutter_*
+.fleet
+.idea
+venv

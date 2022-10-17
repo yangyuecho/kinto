@@ -1,139 +1,103 @@
 #!/usr/bin/env python3
-import json, time, os, sys, subprocess, shlex, platform,argparse
-from shutil import copyfile
+import time, os, subprocess, shlex, platform, argparse
 from subprocess import PIPE, Popen
-from prekinto import *
+from enum import Enum
 
-parser = argparse.ArgumentParser()
 
-parser.add_argument('-r', dest='uninstall', action='store_true', help="uninstall kinto")
-parser.add_argument('--remove', dest='uninstall', action='store_true', help="uninstall kinto")
+class Platform(Enum):
+	linux = "Linux"
+	win = "Windows"
+	other = "Other"
 
-args = parser.parse_args()
 
-homedir = os.path.expanduser("~")
-kintotype = 0
+def cmdline(command: str):
+	# todo: 这里的几个参数并不是十分了解
+	# 如果把universal_newlines 设置成True，则子进程的stdout和stderr被视为文本对象，
+	# 并且不管是*nix的行结束符（'/n'），还是老mac格式的行结束符（'/r' ），还是windows 格式的行结束符（'/r/n' ）都将被视为 '/n'
+	# 一个可以被用于 Popen 的stdin 、stdout 和stderr 3个参数的特输值，表示需要创建一个新的管道
+	# 在linux下，当shell=True时，如果arg是个字符串，就使用shell来解释执行这个字符串。如果args是个列表，则第一项被视为命令，其余的都视为是给shell本身的参数
+	process = Popen(
+		args=command,
+		stdout=PIPE,
+		universal_newlines=True,
+		shell=True
+	)
+	return process.communicate()[0]
 
-def windows_setup():
-	keymaps = ["Apple keyboard standard", "Windows keyboard standard","Chromebook","IBM - No Super/Win","Uninstall"]
-	for index, item in enumerate(keymaps):
-		print("    %i. %s" % (index+1, item))
-	default = 0
-	while not int(default) in range(1,len(keymaps)+1):
-		default = int(input("\nPlease enter your desired keymap (1 - " + str(len(keymaps)) + ") : "))
-	print("")
-	# Short DOS path notation
-	path= cmdline('echo ''%cd%''')[:-1]
-	if default > 0 and default < 5:
-		print("Will now install chocolatey and autohotkey with elevated privileges...")
-		print("This install will fail if you are not running with elevated privileges")
-		os.system('powershell -executionpolicy bypass ".\\windows\\autohotkey.ps1"')
-		print("Copying autohotkey combinations for Terminals & Editors...")
-		os.system('copy /Y "' + path + '\\windows\\kinto.ahk" "' + homedir + '\\kinto-new.ahk"')
-	if default < 3:
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; Default)(?!( - ST2CODE))(.*)/$2$3$5/gm" ' + homedir + '\\kinto-new.ahk')
-	if default == 1:
-		kbtype = "mac"
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; MacModifiers)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-	elif default == 2:
-		kbtype = "win"
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; WinModifiers)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-	elif default == 5:
-		print("Removing any old registry keys from prior versions...")
-		p = subprocess.Popen(['powershell.exe', "Remove-ItemProperty -Path HKLM:'SYSTEM\CurrentControlSet\Control\Keyboard Layout' -Name 'Scancode Map' -ErrorAction SilentlyContinue"], stdout=sys.stdout)
-		print("Removing Kinto from Startup folder...")
-		os.system("(del \"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\kinto.ahk\") 2> nul")
-		os.system('(del "%userprofile%\\AppData\\Roaming\\Microsoft\\Windows\\STARTM~1\\Programs\\Startup\\kinto-start.vbs") 2> nul')
-		print("Ending any running Kinto tasks...")
-		os.system("(taskkill /IM autohotkey.exe) 2> nul")
-		print("Removing Kinto from users profile directory...")
-		os.system('(rd /s /q "%userprofile%\\.kinto") 2> nul')
-		print("")
-		print("Uninstall of Kinto is Complete.")
-	if default == 3:
-		kbtype = "chrome"
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; Chromebook)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; WinModifiers\/CB)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-	if default == 3 or default == 4:
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; CB\/IBM)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; WinModifiers\/CB\/IBM)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-	if default == 4:
-		kbtype = "ibm"
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; IBM)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-	if default > 0 and default < 5:
-		stvscode = yn_choice(bcolors.CYELLOW2 + "Would you like to use Sublime Text 3 keymaps in VS Code?\n" + bcolors.ENDC)
-		print("\nWill now install Ubuntu Terminal Theme as default...")
-		os.system('regedit "' + path + '\\windows\\theme_ubuntu.reg"')
-		os.system('robocopy "'+ path + '\\assets" "%userprofile%\\.kinto\\assets" /E')
-		if (stvscode and (default > 0 or default < 3)):
-			os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; Default - ST2CODE)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-		elif (stvscode and (default == 3 or default == 4 )):
-			os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/(; )(.*)(; CB/IBM - ST2CODE)/$2$3/gm" ' + homedir + '\\kinto-new.ahk')
-		os.system('copy /Y "' + path + '\\windows\\kinto-start.vbs" "%userprofile%\\.kinto\\kinto-start.vbs"')
-		os.system('C:\\Strawberry\\perl\\bin\\perl.exe -pi -e "s/{kbtype}/' + kbtype + '/gm" "%userprofile%\\.kinto\\kinto-start.vbs"')
-		os.system('copy /Y "' + path + '\\windows\\usb.vbs" "%userprofile%\\.kinto\\usb.vbs"')
-		os.system('copy /Y "' + path + '\\windows\\detectUSB.ahk" "%userprofile%\\.kinto\\detectUSB.ahk"')
-		os.system('mklink "%userprofile%\\AppData\\Roaming\\Microsoft\\Windows\\STARTM~1\\Programs\\Startup\\kinto-start.vbs" "%userprofile%\\.kinto\\kinto-start.vbs"')
-		os.system('copy /Y "'+ path + '\\windows\\NoShell.vbs" "%userprofile%\\.kinto\\NoShell.vbs"')
-		os.system('copy /Y "'+ path + '\\windows\\toggle_kb.bat" "%userprofile%\\.kinto\\toggle_kb.bat"')
-		os.system('copy /Y "'+ homedir + '\\kinto-new.ahk" "%userprofile%\\.kinto\\kinto.ahk"')
-		os.system("del /f " + homedir + "\\kinto-new.ahk")
-		os.system("del \"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\kinto.ahk\" 2> nul")
-		userpath = cmdline('cmd /c for %A in ("%userprofile%") do @echo %~sA')[:-1]
-		print('Starting... "' + userpath + '\\AppData\\Roaming\\Microsoft\\Windows\\STARTM~1\\Programs\\Startup\\kinto-start.vbs"')
-		os.system('"' + userpath + '\\AppData\\Roaming\\Microsoft\\Windows\\STARTM~1\\Programs\\Startup\\kinto-start.vbs"')
-	# 	# print("\nPlease log off and back on for changes to take full effect.")
-		print("If using WSL then please remember to right click on title bar -> Properties -> Edit Options -> Use Ctrl+Shift+C/V as Copy/Paste and enable it.")
-	else:
-		os.system("(del \"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\kinto.ahk\") 2> nul")
 
-def cmdline(command):
-    process = Popen(
-        args=command,
-        stdout=PIPE,
-        universal_newlines=True,
-        shell=True
-    )
-    return process.communicate()[0]
+def init_config_file(homedir: str):
+	config_path = homedir + "/.config/kinto"
+	if os.path.isdir(config_path) is False:
+		os.mkdir(config_path)
+		time.sleep(0.5)
 
-if platform.system() == 'Windows':
-	print("\nYou are detected as running Windows.")
-	windows_setup()
-	sys.exit()
 
-check_x11 = cmdline("(env | grep -i x11 || loginctl show-session \"$XDG_SESSION_ID\" -p Type) | awk -F= '{print $2}'").strip()
+def log_version():
+	# 1.2-13 build e106710
+	# --abbrev = 0
+	# 使用默认的7位十六进制数字作为缩写对象名称，而不是使用<n>数字或根据需要的数字来组成一个唯一的对象名称。0 的<n>将抑制长格式，只显示最接近的标签。
+	# 获取最新commit id或者说sha的简短结果
+	# git rev-parse --short HEAD
+	kintover = cmdline('echo "$(git describe --tag --abbrev=0 | head -n 1)" "build" "$(git rev-parse --short HEAD)"')
+	print("\nKinto " + kintover + "Type in Linux like it's a Mac.\n")
 
-if len(check_x11) == 0:
-	if os.name != 'nt':
-		print("You are not using x11, please logout and back in using x11/Xorg")
-		sys.exit()
-	else:
+
+def check_platform() -> str:
+	# 检查系统平台
+	if platform.system() == 'Windows':
 		print("\nYou are detected as running Windows.")
-		windows_setup()
-		sys.exit()
+		return Platform.win.value
 
-distro = cmdline("awk -F= '$1==\"NAME\" { print $2 ;}' /etc/os-release").replace('"','').strip().split(" ")[0]
-dename = cmdline("./linux/system-config/dename.sh").replace('"','').strip().split(" ")[0].lower()
+	check_x11_command = "(env | grep -i x11 || loginctl show-session \"$XDG_SESSION_ID\" -p Type) | awk -F= '{print $2}'"
+	check_x11 = cmdline(check_x11_command).strip()
 
-run_pkg = ""
-
-if os.path.isdir(homedir + "/.config/kinto") == False:
-	os.mkdir(homedir + "/.config/kinto")
-	time.sleep(0.5)
-
-
-cmdline("git fetch")
-
-color_arr = [bcolors.CBEIGE,bcolors.CRED2,bcolors.CGREEN,bcolors.CYELLOW ]
-
-kintover = cmdline('echo "$(git describe --tag --abbrev=0 | head -n 1)" "build" "$(git rev-parse --short HEAD)"')
-
-print("\nKinto " + kintover + "Type in Linux like it's a Mac.\n")
-
-if args.uninstall:
-	subprocess.check_call(shlex.split("./xkeysnail_service.sh uninstall"))
-	exit()
-
-subprocess.check_call(shlex.split("./xkeysnail_service.sh"))
+	if len(check_x11) == 0:
+		if os.name != 'nt':
+			print("You are not using x11, please logout and back in using x11/Xorg")
+			return Platform.other.value
+		else:
+			print("\nYou are detected as running Windows.")
+			# windows_setup()
+			return Platform.win.value
+	return Platform.linux.value
 
 
+def linux_setup(homedir, args):
+	init_config_file(homedir)
+	# 更新代码
+	cmdline("git fetch")
+
+	log_version()
+
+	# 卸载
+	if args.uninstall:
+		# 与 call 方法类似，不同在于如果命令行执行成功，check_call返回返回码 0，否则抛出subprocess.CalledProcessError异常。
+		# 当使用比较复杂的 shell 语句时，可以先使用 shlex 模块的 shlex.split() 方法来帮助格式化命令，然后在传递给 run() 方法或 Popen
+		subprocess.check_call(shlex.split("./xkeysnail_service.sh uninstall"))
+		exit()
+	# 安装
+	subprocess.check_call(shlex.split("./xkeysnail_service.sh"))
+
+
+def main():
+	parser = argparse.ArgumentParser()
+	# 卸载 kinto
+	parser.add_argument('-r', dest='uninstall', action='store_true', help="uninstall kinto")
+	parser.add_argument('--remove', dest='uninstall', action='store_true', help="uninstall kinto")
+
+	args = parser.parse_args()
+	# 将参数中开头部分的 ~ 或 ~user 替换为当前用户的家目录并返回
+	homedir = os.path.expanduser("~")
+
+	plat_form = check_platform()
+	command_map = {
+		Platform.linux.value: linux_setup
+	}
+	action = command_map.get(plat_form)
+	print(action, platform)
+	if action:
+		action(homedir, args)
+
+
+if __name__ == "__main__":
+	main()
